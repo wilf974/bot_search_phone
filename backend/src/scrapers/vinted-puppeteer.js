@@ -90,12 +90,20 @@ async function scrapeVintedCountryPuppeteer(query, country, maxResults = 20) {
     logger.info(`Scraping ${country.name}: ${searchUrl}`);
 
     await page.goto(searchUrl, {
-      waitUntil: 'networkidle2',
+      waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
 
-    // Wait for page to be fully loaded
-    await page.waitForTimeout(3000);
+    // Wait for Vinted's dynamic content to load
+    // Look for the item overlay links which are present on all items
+    await page.waitForSelector('.new-item-box__overlay, a[href*="/items/"]', {
+      timeout: 15000,
+    }).catch(() => {
+      logger.warn(`${country.name}: Timeout waiting for items to load`);
+    });
+
+    // Give extra time for all dynamic content to render
+    await page.waitForTimeout(2000);
 
     // Debug: Get HTML structure to find correct selectors
     const debug = await page.evaluate(() => {
