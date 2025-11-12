@@ -38,23 +38,52 @@ async function scrapeLeboncoin(query = 'iphone', maxResults = 50) {
     // Set viewport
     await page.setViewport({ width: 1920, height: 1080 });
 
+    // Ajouter plus de headers pour éviter la détection
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'DNT': '1',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+    });
+
     // Build URL
     const searchUrl = `https://www.leboncoin.fr/recherche?text=${encodeURIComponent(query)}&category=15`;
     logger.debug(`Navigating to: ${searchUrl}`);
 
     // Navigate to search page
     await page.goto(searchUrl, {
-      waitUntil: 'networkidle2',
+      waitUntil: 'domcontentloaded',
       timeout: config.scraper.timeout,
     });
 
-    // Wait for listings to load
-    await page.waitForSelector('[data-test-id="ad"]', { timeout: 10000 });
+    // Attendre un peu pour le JavaScript
+    await page.waitForTimeout(3000);
 
-    // Extract listings
+    // DEBUG: Capturer ce que voit Puppeteer
+    await page.screenshot({ path: '/tmp/leboncoin-debug.png', fullPage: true });
+    logger.info('Screenshot saved to /tmp/leboncoin-debug.png');
+
+    // Attendre que la page soit chargée (plusieurs sélecteurs possibles)
+    await Promise.race([
+      page.waitForSelector('[data-test-id="ad"]', { timeout: 10000 }),
+      page.waitForSelector('a[data-qa-id="aditem_container"]', { timeout: 10000 }),
+      page.waitForSelector('article', { timeout: 10000 }),
+    ]).catch(() => logger.warn('No ads selector found, trying to parse anyway'));
+
+    // Extract listings - essayer plusieurs sélecteurs
     const listings = await page.evaluate((max) => {
       const items = [];
-      const adElements = document.querySelectorAll('[data-test-id="ad"]');
+
+      // Essayer plusieurs sélecteurs
+      let adElements = document.querySelectorAll('[data-test-id="ad"]');
+      if (adElements.length === 0) {
+        adElements = document.querySelectorAll('a[data-qa-id="aditem_container"]');
+      }
+      if (adElements.length === 0) {
+        adElements = document.querySelectorAll('article');
+      }
 
       for (let i = 0; i < Math.min(adElements.length, max); i++) {
         const ad = adElements[i];

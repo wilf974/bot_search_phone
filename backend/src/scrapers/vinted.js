@@ -30,13 +30,21 @@ async function scrapeVinted(query = 'iphone', maxResults = 50) {
       Math.floor(Math.random() * config.scraper.userAgents.length)
     ];
 
-    // Make request
+    // Make request with more headers to avoid 401
     const response = await axios.get(baseUrl, {
       params,
       headers: {
         'User-Agent': userAgent,
-        'Accept': 'application/json',
-        'Accept-Language': 'fr-FR,fr;q=0.9',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Origin': 'https://www.vinted.fr',
+        'Referer': 'https://www.vinted.fr/',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
       },
       timeout: config.scraper.timeout,
     });
