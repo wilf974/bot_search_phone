@@ -1,68 +1,32 @@
-const { scrapeLeboncoin } = require('./leboncoin');
 const { scrapeVinted } = require('./vinted');
 const logger = require('../utils/logger');
 
 /**
- * Scrape both Leboncoin and Vinted in parallel
+ * Scrape Vinted across all countries
  * @param {string} query - Search query
- * @param {number} maxResults - Max results per source
+ * @param {number} maxResults - Max results total
  * @returns {Promise<Object>} Object with combined results
  */
 async function scrapeAll(query = 'iphone', maxResults = 50) {
-  logger.info(`Starting scraping for query: ${query}`);
+  logger.info(`Starting Vinted multi-country scraping for query: ${query}`);
   const startTime = Date.now();
 
   try {
-    // Run scrapers in parallel
-    const [leboncoinResults, vintedResults] = await Promise.allSettled([
-      scrapeLeboncoin(query, maxResults),
-      scrapeVinted(query, maxResults),
-    ]);
-
-    // Process results
-    const leboncoin = leboncoinResults.status === 'fulfilled'
-      ? leboncoinResults.value
-      : [];
-
-    const vinted = vintedResults.status === 'fulfilled'
-      ? vintedResults.value
-      : [];
-
-    // Log any errors
-    if (leboncoinResults.status === 'rejected') {
-      logger.error('Leboncoin scraping failed:', leboncoinResults.reason);
-    }
-    if (vintedResults.status === 'rejected') {
-      logger.error('Vinted scraping failed:', vintedResults.reason);
-    }
-
-    // Combine results
-    const allResults = [...leboncoin, ...vinted];
-
-    // Sort by date (newest first) - rough sort
-    allResults.sort((a, b) => {
-      if (!a.date) return 1;
-      if (!b.date) return -1;
-      return 0; // Keep original order if dates exist
-    });
+    // Scraper uniquement Vinted (tous les pays)
+    const vinted = await scrapeVinted(query, maxResults);
 
     const duration = Date.now() - startTime;
     logger.info(
-      `Scraping completed in ${duration}ms. Total: ${allResults.length} items ` +
-      `(Leboncoin: ${leboncoin.length}, Vinted: ${vinted.length})`
+      `Scraping completed in ${duration}ms. Total: ${vinted.length} items from Vinted`
     );
 
     return {
-      total: allResults.length,
-      leboncoin: {
-        count: leboncoin.length,
-        success: leboncoinResults.status === 'fulfilled',
-      },
+      total: vinted.length,
       vinted: {
         count: vinted.length,
-        success: vintedResults.status === 'fulfilled',
+        success: true,
       },
-      results: allResults,
+      results: vinted,
       query,
       timestamp: new Date().toISOString(),
     };
@@ -74,6 +38,5 @@ async function scrapeAll(query = 'iphone', maxResults = 50) {
 
 module.exports = {
   scrapeAll,
-  scrapeLeboncoin,
   scrapeVinted,
 };

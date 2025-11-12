@@ -2,35 +2,47 @@ const axios = require('axios');
 const config = require('../config');
 const logger = require('../utils/logger');
 
+// Liste des pays Vinted disponibles
+const VINTED_COUNTRIES = [
+  { code: 'fr', domain: 'vinted.fr', name: 'France' },
+  { code: 'be', domain: 'vinted.be', name: 'Belgique' },
+  { code: 'nl', domain: 'vinted.nl', name: 'Pays-Bas' },
+  { code: 'lu', domain: 'vinted.lu', name: 'Luxembourg' },
+  { code: 'es', domain: 'vinted.es', name: 'Espagne' },
+  { code: 'it', domain: 'vinted.it', name: 'Italie' },
+  { code: 'de', domain: 'vinted.de', name: 'Allemagne' },
+  { code: 'at', domain: 'vinted.at', name: 'Autriche' },
+  { code: 'cz', domain: 'vinted.cz', name: 'République Tchèque' },
+  { code: 'pl', domain: 'vinted.pl', name: 'Pologne' },
+  { code: 'lt', domain: 'vinted.lt', name: 'Lituanie' },
+  { code: 'uk', domain: 'vinted.co.uk', name: 'Royaume-Uni' },
+  { code: 'us', domain: 'vinted.com', name: 'États-Unis' },
+  { code: 'ca', domain: 'vinted.ca', name: 'Canada' },
+];
+
 /**
- * Scrape Vinted for iPhone listings using their API
- * @param {string} query - Search query (default: "iphone")
- * @param {number} maxResults - Maximum number of results
+ * Scrape Vinted for a specific country
+ * @param {string} query - Search query
+ * @param {Object} country - Country object with domain and name
+ * @param {number} maxResults - Max results
  * @returns {Promise<Array>} Array of listings
  */
-async function scrapeVinted(query = 'iphone', maxResults = 50) {
-  const startTime = Date.now();
-  logger.info(`Starting Vinted scraping for: ${query}`);
-
+async function scrapeVintedCountry(query, country, maxResults = 20) {
   try {
-    // Vinted API endpoint (France)
-    const baseUrl = 'https://www.vinted.fr/api/v2/catalog/items';
+    const baseUrl = `https://www.${country.domain}/api/v2/catalog/items`;
 
-    // Build query parameters
     const params = {
       search_text: query,
       catalog_ids: '',
       order: 'newest_first',
       page: 1,
-      per_page: Math.min(maxResults, 96), // Max 96 per page
+      per_page: Math.min(maxResults, 96),
     };
 
-    // Random user agent
     const userAgent = config.scraper.userAgents[
       Math.floor(Math.random() * config.scraper.userAgents.length)
     ];
 
-    // Make request with more headers to avoid 401
     const response = await axios.get(baseUrl, {
       params,
       headers: {
@@ -38,8 +50,8 @@ async function scrapeVinted(query = 'iphone', maxResults = 50) {
         'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8',
         'Accept-Encoding': 'gzip, deflate, br',
-        'Origin': 'https://www.vinted.fr',
-        'Referer': 'https://www.vinted.fr/',
+        'Origin': `https://www.${country.domain}`,
+        'Referer': `https://www.${country.domain}/`,
         'DNT': '1',
         'Connection': 'keep-alive',
         'Sec-Fetch-Dest': 'empty',
@@ -50,7 +62,6 @@ async function scrapeVinted(query = 'iphone', maxResults = 50) {
     });
 
     if (!response.data || !response.data.items) {
-      logger.warn('No items found in Vinted response');
       return [];
     }
 
@@ -84,10 +95,8 @@ async function scrapeVinted(query = 'iphone', maxResults = 50) {
         date = dateObj.toLocaleDateString('fr-FR');
       }
 
-      // Build link
-      const link = `https://www.vinted.fr/items/${item.id}`;
+      const link = `https://www.${country.domain}/items/${item.id}`;
 
-      // Extract condition/state
       let condition = null;
       if (item.status) {
         condition = item.status;
@@ -103,27 +112,70 @@ async function scrapeVinted(query = 'iphone', maxResults = 50) {
         condition,
         seller: item.user ? item.user.login : null,
         source: 'vinted',
+        country: country.name, // Ajouter le pays
+        countryCode: country.code,
       };
     });
 
-    const duration = Date.now() - startTime;
-    logger.info(`Vinted scraping completed: ${listings.length} items in ${duration}ms`);
-
+    logger.info(`Vinted ${country.name}: ${listings.length} items found`);
     return listings;
   } catch (error) {
-    // Check if it's an API error
     if (error.response) {
-      logger.error('Vinted API error:', {
+      logger.warn(`Vinted ${country.name} API error:`, {
         status: error.response.status,
-        data: error.response.data,
       });
     } else {
-      logger.error('Vinted scraping error:', error.message);
+      logger.warn(`Vinted ${country.name} error:`, error.message);
     }
-
-    // Return empty array instead of throwing to not break the entire search
     return [];
   }
 }
 
-module.exports = { scrapeVinted };
+/**
+ * Scrape Vinted across all countries
+ * @param {string} query - Search query (default: "iphone")
+ * @param {number} maxResults - Maximum results per country
+ * @returns {Promise<Array>} Array of all listings
+ */
+async function scrapeVinted(query = 'iphone', maxResults = 50) {
+  const startTime = Date.now();
+  logger.info(`Starting Vinted multi-country scraping for: ${query}`);
+
+  try {
+    // Calculer combien d'items par pays (répartir équitablement)
+    const resultsPerCountry = Math.ceil(maxResults / VINTED_COUNTRIES.length);
+
+    // Scraper tous les pays en parallèle
+    const promises = VINTED_COUNTRIES.map(country =>
+      scrapeVintedCountry(query, country, resultsPerCountry)
+    );
+
+    const results = await Promise.allSettled(promises);
+
+    // Combiner tous les résultats
+    let allListings = [];
+    let successCount = 0;
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value.length > 0) {
+        allListings = allListings.concat(result.value);
+        successCount++;
+      }
+    });
+
+    // Limiter au nombre max demandé
+    allListings = allListings.slice(0, maxResults);
+
+    const duration = Date.now() - startTime;
+    logger.info(
+      `Vinted multi-country scraping completed: ${allListings.length} items from ${successCount}/${VINTED_COUNTRIES.length} countries in ${duration}ms`
+    );
+
+    return allListings;
+  } catch (error) {
+    logger.error('Vinted multi-country scraping error:', error.message);
+    return [];
+  }
+}
+
+module.exports = { scrapeVinted, scrapeVintedCountry, VINTED_COUNTRIES };

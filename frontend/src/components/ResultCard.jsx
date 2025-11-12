@@ -47,9 +47,14 @@ export default function ResultCard({ item }) {
           </div>
         )}
 
-        {/* Source badge */}
-        <div className="absolute top-3 right-3">
+        {/* Source and Country badges */}
+        <div className="absolute top-3 right-3 flex gap-2">
           {getSourceBadge(item.source)}
+          {item.country && (
+            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+              {item.countryCode ? item.countryCode.toUpperCase() : item.country}
+            </span>
+          )}
         </div>
       </div>
 
@@ -86,9 +91,14 @@ export default function ResultCard({ item }) {
         {item.source === 'vinted' && (
           <div className="mt-3 pt-3 border-t border-gray-100">
             <div className="flex items-center justify-between text-xs text-gray-500">
-              {item.seller && (
-                <span className="truncate">Vendeur: {item.seller}</span>
-              )}
+              <div className="flex items-center gap-2">
+                {item.seller && (
+                  <span className="truncate">👤 {item.seller}</span>
+                )}
+                {item.country && (
+                  <span className="text-blue-600">📍 {item.country}</span>
+                )}
+              </div>
               {item.condition && (
                 <span className="capitalize">{item.condition}</span>
               )}
