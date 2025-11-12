@@ -5,8 +5,8 @@ services:
     build: ./nginx
     container_name: bot_nginx_proxy
     ports:
-      - "80:80"
-      - "443:443"
+      - "5080:80"
+      - "5443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro

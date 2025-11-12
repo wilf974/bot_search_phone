@@ -1,15 +1,16 @@
 # 🔍 Bot Recherche iPhone
 
-Bot de recherche d'annonces iPhone sur **Leboncoin** et **Vinted**. Architecture full Docker avec HTTPS.
+Bot de recherche d'annonces iPhone sur **Vinted** (multi-pays). Architecture full Docker avec HTTPS.
 
 ## 📋 Fonctionnalités
 
-- ✅ Scraping automatique de Leboncoin et Vinted
+- ✅ Scraping automatique Vinted sur 14 pays (FR, BE, NL, LU, ES, IT, DE, AT, CZ, PL, LT, UK, US, CA)
+- ✅ Scraping parallèle pour des résultats rapides
 - ✅ Interface web moderne et responsive (React + TailwindCSS)
-- ✅ Cache Redis pour des performances optimales
+- ✅ Cache Redis pour des performances optimales (1h TTL)
 - ✅ Déploiement full Docker
-- ✅ HTTPS automatique avec Let's Encrypt
-- ✅ Filtrage et tri des résultats
+- ✅ Support HTTPS
+- ✅ Badges par source et pays
 - ✅ API REST robuste avec rate limiting
 
 ## 🏗️ Architecture
@@ -17,33 +18,34 @@ Bot de recherche d'annonces iPhone sur **Leboncoin** et **Vinted**. Architecture
 ```
 ┌─────────────────────────────────────────┐
 │     monbot.woutils.com (HTTPS)          │
+│     [System Nginx - Optional]           │
+│     Ports 80, 443 → localhost:5080      │
 └───────────────┬─────────────────────────┘
                 │
        ┌────────▼──────────┐
-       │  nginx-proxy      │ (Ports 80, 443)
-       │  + certbot        │
+       │  nginx-proxy      │ (Ports 5080, 5443)
+       │  (Docker)         │
        └────────┬──────────┘
                 │
        ┌────────▼──────────┐
-       │  frontend         │ (React + Vite)
+       │  frontend         │ (React + Vite + Nginx)
        └───────────────────┘
                 │
        ┌────────▼──────────┐
        │  backend          │ (Node.js + Express)
-       │  + Puppeteer      │
+       │  + Vinted API     │ (14 countries)
        └────────┬──────────┘
                 │
        ┌────────▼──────────┐
-       │  redis            │ (Cache)
+       │  redis            │ (Cache 1h)
        └───────────────────┘
 ```
 
-**5 containers Docker:**
-- `nginx-proxy`: Reverse proxy + SSL termination
-- `certbot`: Gestion automatique des certificats SSL
-- `frontend`: Application React (build statique)
-- `backend`: API Node.js avec scrapers Puppeteer
-- `redis`: Cache des résultats
+**4 containers Docker:**
+- `nginx-proxy`: Reverse proxy interne (ports 5080:80, 5443:443)
+- `frontend`: Application React (build statique servi par Nginx)
+- `backend`: API Node.js avec scraper Vinted multi-pays
+- `redis`: Cache des résultats (TTL 1h)
 
 ## 🚀 Démarrage Rapide
 
@@ -51,8 +53,8 @@ Bot de recherche d'annonces iPhone sur **Leboncoin** et **Vinted**. Architecture
 
 - Docker v24+ installé
 - Docker Compose v2+ installé
-- Domaine configuré pointant vers votre VPS
-- Ports 80 et 443 ouverts
+- Domaine configuré pointant vers votre VPS (optionnel)
+- Ports 5080 et 5443 disponibles (ou ports 80/443 si reverse proxy système)
 
 ### Installation
 
@@ -62,35 +64,42 @@ git clone <repo-url>
 cd bot_search_phone
 ```
 
-2. **Configurer les variables d'environnement**
+2. **Déployer l'application**
 ```bash
-cp .env.example .env
-# Modifier .env si nécessaire
+chmod +x deploy.sh
+./deploy.sh
 ```
 
-3. **Configurer le domaine et l'email pour SSL**
+3. **Vérifier le déploiement**
 ```bash
-# Éditer scripts/init-letsencrypt.sh
-nano scripts/init-letsencrypt.sh
-# Modifier:
-# - domains=(monbot.woutils.com)  # Votre domaine
-# - email="your-email@example.com"  # Votre email
+docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.prod.yml logs -f
 ```
 
-4. **Initialiser SSL (première fois uniquement)**
+🎉 Votre application est maintenant accessible à :
+- **Direct Docker**: `http://localhost:5080` ou `https://localhost:5443`
+- **Avec reverse proxy système**: `https://monbot.woutils.com`
+
+### Configuration HTTPS avec domaine (optionnel)
+
+Si vous voulez accéder via un nom de domaine sur les ports standards (80/443):
+
+1. **Installer Nginx système**
 ```bash
-./scripts/init-letsencrypt.sh
+sudo apt update && sudo apt install nginx certbot python3-certbot-nginx -y
 ```
 
-5. **Déployer l'application**
+2. **Configurer le reverse proxy**
 ```bash
-./scripts/deploy.sh
+sudo cp nginx-reverse-proxy.conf /etc/nginx/sites-available/monbot.woutils.com
+sudo ln -s /etc/nginx/sites-available/monbot.woutils.com /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
-6. **Vérifier le déploiement**
+3. **Obtenir un certificat SSL Let's Encrypt**
 ```bash
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f
+sudo certbot --nginx -d monbot.woutils.com
 ```
 
 🎉 Votre application est maintenant accessible à : `https://monbot.woutils.com`
@@ -155,23 +164,23 @@ curl "https://monbot.woutils.com/api/search?query=iphone%2014&maxResults=50"
   "success": true,
   "cached": false,
   "total": 87,
-  "leboncoin": {
-    "count": 45,
-    "success": true
-  },
   "vinted": {
-    "count": 42,
+    "count": 87,
     "success": true
   },
   "results": [
     {
       "title": "iPhone 14 Pro 128Go",
-      "price": "850€",
-      "link": "https://www.leboncoin.fr/...",
+      "price": "850 €",
+      "link": "https://www.vinted.fr/items/...",
       "image": "https://...",
       "location": "Paris",
-      "date": "Aujourd'hui",
-      "source": "leboncoin"
+      "date": "12/01/2025",
+      "condition": "good",
+      "seller": "username",
+      "source": "vinted",
+      "country": "France",
+      "countryCode": "fr"
     },
     ...
   ],
@@ -308,10 +317,9 @@ docker exec -it bot_redis redis-cli DBSIZE
 
 ## ⚠️ Considérations Légales
 
-- **Leboncoin**: Le scraping est interdit par leurs CGU. Utilisez avec modération et à vos risques.
-- **Vinted**: API non officielle, usage personnel uniquement.
+- **Vinted**: Utilise l'API publique non officielle. Usage personnel uniquement.
 - **Rate limiting**: Configuré pour éviter de surcharger les serveurs.
-- **Respect du robots.txt**: Les scrapers respectent les délais recommandés.
+- **Multi-pays**: Scraping parallèle de 14 pays Vinted.
 
 **Usage recommandé**: Personnel, recherche, éducation uniquement. Ne pas revendre les données.
 
@@ -320,10 +328,11 @@ docker exec -it bot_redis redis-cli DBSIZE
 **Backend:**
 - Node.js 18
 - Express.js
-- Puppeteer (Leboncoin)
-- Axios (Vinted)
-- Redis
+- Axios (Vinted API multi-pays)
+- Redis (cache 1h)
 - Winston (logs)
+- Express Rate Limit
+- Helmet (security)
 
 **Frontend:**
 - React 18
