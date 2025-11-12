@@ -1,6 +1,10 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const config = require('../config');
 const logger = require('../utils/logger');
+
+// Ajouter le plugin stealth pour éviter la détection
+puppeteer.use(StealthPlugin());
 
 /**
  * Scrape Leboncoin for iPhone listings
@@ -14,7 +18,7 @@ async function scrapeLeboncoin(query = 'iphone', maxResults = 50) {
 
   let browser;
   try {
-    // Launch browser
+    // Launch browser avec stealth mode
     browser = await puppeteer.launch({
       headless: 'new',
       args: [
@@ -23,8 +27,11 @@ async function scrapeLeboncoin(query = 'iphone', maxResults = 50) {
         '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1920,1080',
       ],
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      ignoreHTTPSErrors: true,
     });
 
     const page = await browser.newPage();
