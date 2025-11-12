@@ -1,4 +1,8 @@
-const puppeteer = require('puppeteer');
+// Use puppeteer-extra with stealth plugin for better anti-detection
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
+
 const logger = require('../utils/logger');
 
 // Browser instance cache (réutilisé entre requêtes)
@@ -81,50 +85,17 @@ async function scrapeVintedCountryPuppeteer(query, country, maxResults = 20) {
     const browser = await getBrowser();
     page = await browser.newPage();
 
-    // Anti-detection: Override navigator properties
-    await page.evaluateOnNewDocument(() => {
-      // Remove webdriver property
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => false,
-      });
-
-      // Override plugins and languages
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => [1, 2, 3, 4, 5],
-      });
-
-      Object.defineProperty(navigator, 'languages', {
-        get: () => ['en-US', 'en', 'fr'],
-      });
-
-      // Override chrome property
-      window.chrome = {
-        runtime: {},
-      };
-
-      // Override permissions
-      const originalQuery = window.navigator.permissions.query;
-      window.navigator.permissions.query = (parameters) => (
-        parameters.name === 'notifications' ?
-          Promise.resolve({ state: Notification.permission }) :
-          originalQuery(parameters)
-      );
-    });
-
-    // Set viewport and user agent
+    // Set viewport and user agent (stealth plugin handles most anti-detection)
     await page.setViewport({ width: 1920, height: 1080 });
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
 
-    // Set extra headers
+    // Set extra headers for realism
     await page.setExtraHTTPHeaders({
       'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
       'Accept-Encoding': 'gzip, deflate, br',
-      'DNT': '1',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
     });
 
     // Navigate to search page
