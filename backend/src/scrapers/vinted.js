@@ -20,6 +20,64 @@ const VINTED_COUNTRIES = [
   { code: 'ca', domain: 'vinted.ca', name: 'Canada' },
 ];
 
+// Cache pour stocker les cookies par domaine
+const cookieCache = new Map();
+
+/**
+ * Get session cookies for a Vinted domain
+ * @param {string} domain - Vinted domain
+ * @returns {Promise<string>} Cookie string
+ */
+async function getVintedCookies(domain) {
+  // Check cache first
+  const cached = cookieCache.get(domain);
+  if (cached && Date.now() - cached.timestamp < 300000) { // 5 minutes cache
+    return cached.cookies;
+  }
+
+  try {
+    const userAgent = config.scraper.userAgents[
+      Math.floor(Math.random() * config.scraper.userAgents.length)
+    ];
+
+    // First, visit the homepage to get cookies
+    const homeResponse = await axios.get(`https://www.${domain}`, {
+      headers: {
+        'User-Agent': userAgent,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
+      },
+      timeout: config.scraper.timeout,
+      maxRedirects: 5,
+    });
+
+    // Extract cookies from response
+    const cookies = homeResponse.headers['set-cookie'];
+    const cookieString = cookies ? cookies.map(c => c.split(';')[0]).join('; ') : '';
+
+    // Cache the cookies
+    cookieCache.set(domain, {
+      cookies: cookieString,
+      timestamp: Date.now(),
+      userAgent,
+    });
+
+    return cookieString;
+  } catch (error) {
+    logger.warn(`Failed to get cookies for ${domain}:`, error.message);
+    return '';
+  }
+}
+
 /**
  * Scrape Vinted for a specific country
  * @param {string} query - Search query
@@ -29,6 +87,11 @@ const VINTED_COUNTRIES = [
  */
 async function scrapeVintedCountry(query, country, maxResults = 20) {
   try {
+    // Get session cookies first
+    const cookies = await getVintedCookies(country.domain);
+    const cachedData = cookieCache.get(country.domain);
+    const userAgent = cachedData ? cachedData.userAgent : config.scraper.userAgents[0];
+
     const baseUrl = `https://www.${country.domain}/api/v2/catalog/items`;
 
     const params = {
@@ -39,24 +102,26 @@ async function scrapeVintedCountry(query, country, maxResults = 20) {
       per_page: Math.min(maxResults, 96),
     };
 
-    const userAgent = config.scraper.userAgents[
-      Math.floor(Math.random() * config.scraper.userAgents.length)
-    ];
-
     const response = await axios.get(baseUrl, {
       params,
       headers: {
         'User-Agent': userAgent,
         'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
         'Accept-Encoding': 'gzip, deflate, br',
         'Origin': `https://www.${country.domain}`,
-        'Referer': `https://www.${country.domain}/`,
+        'Referer': `https://www.${country.domain}/catalog?search_text=${encodeURIComponent(query)}`,
+        'Cookie': cookies,
         'DNT': '1',
         'Connection': 'keep-alive',
         'Sec-Fetch-Dest': 'empty',
         'Sec-Fetch-Mode': 'cors',
         'Sec-Fetch-Site': 'same-origin',
+        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Pragma': 'no-cache',
+        'Cache-Control': 'no-cache',
       },
       timeout: config.scraper.timeout,
     });
