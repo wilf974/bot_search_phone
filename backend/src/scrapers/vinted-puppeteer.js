@@ -94,71 +94,95 @@ async function scrapeVintedCountryPuppeteer(query, country, maxResults = 20) {
       timeout: 30000,
     });
 
-    // Wait for results to load
-    await page.waitForSelector('[data-testid="item-box"], .feed-grid__item, .new-item-box__container', {
-      timeout: 10000,
-    }).catch(() => {
-      logger.warn(`${country.name}: No results selector found, trying alternative`);
+    // Wait for page to be fully loaded
+    await page.waitForTimeout(3000);
+
+    // Debug: Get HTML structure to find correct selectors
+    const debug = await page.evaluate(() => {
+      const mainContent = document.querySelector('main, [role="main"], #content, .catalog');
+      if (!mainContent) return { found: false, selectors: [] };
+
+      // Find all links to items
+      const itemLinks = Array.from(document.querySelectorAll('a[href*="/items/"]'));
+      const uniqueClasses = new Set();
+
+      itemLinks.forEach(link => {
+        // Get parent container classes
+        let parent = link.parentElement;
+        for (let i = 0; i < 3 && parent; i++) {
+          if (parent.className) {
+            parent.className.split(' ').forEach(c => {
+              if (c && !c.startsWith('_')) uniqueClasses.add(c);
+            });
+          }
+          parent = parent.parentElement;
+        }
+      });
+
+      return {
+        found: true,
+        itemLinksCount: itemLinks.length,
+        classes: Array.from(uniqueClasses).slice(0, 20),
+      };
     });
 
-    // Give extra time for dynamic content
-    await page.waitForTimeout(2000);
+    logger.info(`${country.name} debug:`, debug);
 
-    // Extract items from the page
+    // Extract items from the page using generic approach
     const items = await page.evaluate((countryInfo) => {
       const results = [];
 
-      // Try multiple selectors (Vinted uses different ones)
-      const selectors = [
-        '[data-testid="item-box"]',
-        '.feed-grid__item',
-        '.new-item-box__container',
-        'div[class*="Item"]',
-      ];
+      // Find all item links (most reliable approach)
+      const itemLinks = document.querySelectorAll('a[href*="/items/"]');
+      const processed = new Set();
 
-      let elements = [];
-      for (const selector of selectors) {
-        elements = document.querySelectorAll(selector);
-        if (elements.length > 0) break;
-      }
-
-      elements.forEach((item) => {
+      itemLinks.forEach((link) => {
         try {
-          // Extract title
-          const titleEl = item.querySelector('[itemprop="name"], .item-box__title, a[title]');
-          const title = titleEl ? (titleEl.getAttribute('title') || titleEl.textContent.trim()) : null;
+          const href = link.getAttribute('href');
+          if (!href || processed.has(href)) return;
+          processed.add(href);
 
-          if (!title) return; // Skip if no title
+          // Get the container (usually parent or grandparent)
+          let container = link.closest('div[class*="item"], div[class*="Item"], article, li');
+          if (!container) container = link.parentElement?.parentElement || link.parentElement;
+          if (!container) return;
 
-          // Extract price
-          const priceEl = item.querySelector('[itemprop="price"], .item-price, .item-box__price');
-          const price = priceEl ? priceEl.textContent.trim() : 'N/A';
+          // Extract title - try link text or nearby text
+          let title = link.getAttribute('title') ||
+                     link.getAttribute('aria-label') ||
+                     link.textContent.trim();
 
-          // Extract link
-          const linkEl = item.querySelector('a[href*="/items/"]');
-          const link = linkEl ? linkEl.getAttribute('href') : null;
-          const fullLink = link ? (link.startsWith('http') ? link : `https://www.${countryInfo.domain}${link}`) : null;
+          // Clean title (remove extra whitespace)
+          title = title.replace(/\s+/g, ' ').trim();
+          if (!title || title.length < 3) return;
 
           // Extract image
-          const imgEl = item.querySelector('img[src*="vinted"], img[itemprop="image"]');
-          const image = imgEl ? imgEl.getAttribute('src') : null;
+          const img = container.querySelector('img');
+          const image = img ? (img.getAttribute('src') || img.getAttribute('data-src')) : null;
 
-          // Extract brand/info
-          const brandEl = item.querySelector('.item-box__brand, [itemprop="brand"]');
-          const brand = brandEl ? brandEl.textContent.trim() : null;
-
-          if (fullLink) {
-            results.push({
-              title,
-              price,
-              link: fullLink,
-              image,
-              brand,
-              source: 'vinted',
-              country: countryInfo.name,
-              countryCode: countryInfo.code,
-            });
+          // Extract price - look for currency symbols or price text
+          const priceEl = container.querySelector('[class*="price"], [class*="Price"]');
+          let price = 'N/A';
+          if (priceEl) {
+            price = priceEl.textContent.trim();
+          } else {
+            // Fallback: search for currency in text
+            const text = container.textContent;
+            const priceMatch = text.match(/€\s*\d+[,.]?\d*|\d+[,.]?\d*\s*€|£\s*\d+[,.]?\d*|\$\s*\d+[,.]?\d*/);
+            if (priceMatch) price = priceMatch[0];
           }
+
+          const fullLink = href.startsWith('http') ? href : `https://www.${countryInfo.domain}${href}`;
+
+          results.push({
+            title,
+            price,
+            link: fullLink,
+            image,
+            source: 'vinted',
+            country: countryInfo.name,
+            countryCode: countryInfo.code,
+          });
         } catch (err) {
           // Skip items with errors
         }
