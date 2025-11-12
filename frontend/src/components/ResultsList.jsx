@@ -37,13 +37,10 @@ export default function ResultsList({ results, stats }) {
               <span className="text-2xl font-bold text-gray-900">{filteredResults.length}</span>
               <span className="text-gray-600 ml-2">annonces trouvées</span>
             </div>
-            {stats && (
+            {stats && stats.vinted && (
               <div className="flex gap-4 text-sm">
-                <span className="text-orange-600 font-medium">
-                  Leboncoin: {stats.leboncoin.count}
-                </span>
                 <span className="text-green-600 font-medium">
-                  Vinted: {stats.vinted.count}
+                  Vinted (14 pays): {stats.vinted.count}
                 </span>
               </div>
             )}
@@ -56,8 +53,7 @@ export default function ResultsList({ results, stats }) {
               onChange={(e) => setFilterSource(e.target.value)}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
-              <option value="all">Toutes les sources</option>
-              <option value="leboncoin">Leboncoin uniquement</option>
+              <option value="all">Tous les pays</option>
               <option value="vinted">Vinted uniquement</option>
             </select>
 

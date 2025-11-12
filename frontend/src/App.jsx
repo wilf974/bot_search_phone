@@ -22,7 +22,6 @@ function App() {
       if (data.success) {
         setResults(data.results || []);
         setStats({
-          leboncoin: data.leboncoin,
           vinted: data.vinted,
         });
         setSearchInfo({
@@ -60,7 +59,7 @@ function App() {
               🔍 Bot Recherche iPhone
             </h1>
             <p className="text-gray-600">
-              Recherchez des iPhone sur Leboncoin et Vinted en un clic
+              Recherchez des iPhone sur Vinted dans 14 pays en un clic
             </p>
           </div>
         </div>
@@ -124,7 +123,7 @@ function App() {
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <p className="text-center text-sm text-gray-600">
-            Bot de recherche d'iPhone • Leboncoin & Vinted • 2025
+            Bot de recherche d'iPhone • Vinted Multi-Pays • 2025
           </p>
           <p className="text-center text-xs text-gray-500 mt-2">
             Les données sont issues de sites tiers. Vérifiez toujours les annonces avant achat.
