@@ -43,7 +43,7 @@ async function getBrowser() {
     }
   }
 
-  // Create new browser
+  // Create new browser with anti-detection measures
   logger.info('Launching new Puppeteer browser instance');
   browserInstance = await puppeteer.launch({
     headless: true,
@@ -56,8 +56,10 @@ async function getBrowser() {
       '--no-first-run',
       '--no-zygote',
       '--disable-gpu',
-      '--disable-web-security',
+      '--disable-blink-features=AutomationControlled',  // Hide automation
       '--disable-features=IsolateOrigins,site-per-process',
+      '--window-size=1920,1080',
+      '--start-maximized',
     ],
   });
 
@@ -79,25 +81,68 @@ async function scrapeVintedCountryPuppeteer(query, country, maxResults = 20) {
     const browser = await getBrowser();
     page = await browser.newPage();
 
+    // Anti-detection: Override navigator properties
+    await page.evaluateOnNewDocument(() => {
+      // Remove webdriver property
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+      });
+
+      // Override plugins and languages
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en', 'fr'],
+      });
+
+      // Override chrome property
+      window.chrome = {
+        runtime: {},
+      };
+
+      // Override permissions
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission }) :
+          originalQuery(parameters)
+      );
+    });
+
     // Set viewport and user agent
     await page.setViewport({ width: 1920, height: 1080 });
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
 
+    // Set extra headers
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'DNT': '1',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+    });
+
     // Navigate to search page
     const searchUrl = `https://www.${country.domain}/catalog?search_text=${encodeURIComponent(query)}&order=newest_first`;
     logger.info(`Scraping ${country.name}: ${searchUrl}`);
 
     await page.goto(searchUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 30000,
+      waitUntil: 'networkidle2',  // Wait for network to be idle
+      timeout: 45000,
     });
+
+    // Give JavaScript time to execute and render
+    await page.waitForTimeout(3000);
 
     // Wait for Vinted's dynamic content to load
     // Look for the item overlay links which are present on all items
     await page.waitForSelector('.new-item-box__overlay, a[href*="/items/"]', {
-      timeout: 15000,
+      timeout: 20000,
     }).catch(() => {
       logger.warn(`${country.name}: Timeout waiting for items to load`);
     });
@@ -108,10 +153,26 @@ async function scrapeVintedCountryPuppeteer(query, country, maxResults = 20) {
     // Debug: Get HTML structure to find correct selectors
     const debug = await page.evaluate(() => {
       const mainContent = document.querySelector('main, [role="main"], #content, .catalog');
-      if (!mainContent) return { found: false, selectors: [] };
+
+      // Capture page title and body text length to see what we got
+      const pageTitle = document.title;
+      const bodyText = document.body ? document.body.innerText.substring(0, 200) : '';
+      const bodyHTML = document.body ? document.body.innerHTML.substring(0, 500) : '';
+
+      if (!mainContent) {
+        return {
+          found: false,
+          pageTitle,
+          bodyTextPreview: bodyText,
+          bodyHTMLPreview: bodyHTML,
+          hasBody: !!document.body,
+          allLinks: document.querySelectorAll('a').length
+        };
+      }
 
       // Find all links to items
       const itemLinks = Array.from(document.querySelectorAll('a[href*="/items/"]'));
+      const allLinks = Array.from(document.querySelectorAll('a'));
       const uniqueClasses = new Set();
 
       itemLinks.forEach(link => {
@@ -129,8 +190,12 @@ async function scrapeVintedCountryPuppeteer(query, country, maxResults = 20) {
 
       return {
         found: true,
+        pageTitle,
         itemLinksCount: itemLinks.length,
+        totalLinksCount: allLinks.length,
         classes: Array.from(uniqueClasses).slice(0, 20),
+        bodyTextPreview: bodyText,
+        sampleLinkHrefs: allLinks.slice(0, 5).map(a => a.getAttribute('href')),
       };
     });
 
